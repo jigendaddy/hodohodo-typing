@@ -7,7 +7,7 @@ on:
   workflow_dispatch: # 手動実行もできるようにする
 
 permissions:
-  contents: write  # Gitリポジトリへの変更プッシュに必要
+  contents: write # 更新したファイルをコミットするために必要
 
 jobs:
   update:
@@ -22,49 +22,31 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: |
-          pip install "wordfreq[cjk]"
+        run: pip install "wordfreq[cjk]"
 
       - name: Download WordNet XML
         run: |
-          # 日本語WordNetのXMLをダウンロード（サイズが大きいためリポジトリには含めず都度取得）
-          curl -L -o wnja-2.1.xml https://github.com/bond-lab/wnja/releases/download/v2.1/wnja-2.1.xml
+          # 日本語WordNetのXMLは大きいので、リポジトリには含めず都度取得する
+          # -f: 取得に失敗したらここで止める(壊れたファイルのまま続行しない)
+          curl -fL --retry 3 -o wnja-2.1.xml https://github.com/bond-lab/wnja/releases/download/v2.1/wnja-2.1.xml
 
-      - name: Generate Wordlist
+      - name: Generate wordlist and update index.html
         run: |
-          # XMLから単語リストを生成し、out/ フォルダに出力
-          python build_wordlist.py --wordnet-xml wnja-2.1.xml --download
-
-      - name: Update HTML DEFAULT_WORDS
-        run: |
-          # 生成された words_for_game.txt を読み込み、HTML内の DEFAULT_WORDS を書き換えるPythonスクリプト
-          python -c "
-          import re, json
-          with open('out/words_for_game.txt', encoding='utf-8') as f:
-              lines = f.read().strip().split('\n')
-          words_json = json.dumps(lines, ensure_ascii=False)
-          
-          # index.html を対象にするように修正
-          with open('index.html', encoding='utf-8') as f:
-              html = f.read()
-              
-          # HTML内の const DEFAULT_WORDS = [ ... ]; を正規表現で置換
-          new_html = re.sub(
-              r'const DEFAULT_WORDS = \[.*?\];',
-              f'const DEFAULT_WORDS = {words_json};',
-              html,
-              flags=re.DOTALL
-          )
-          
-          with open('index.html', 'w', encoding='utf-8') as f:
-              f.write(new_html)
-          "
+          # 単語リストを作り、index.html の DEFAULT_WORDS と、
+          # クレジット画面のJMdictの版・語数も書き換える。
+          # 語数が極端に少ない・大きく減るときは、何も書き換えずに失敗する。
+          python build_wordlist.py --wordnet-xml wnja-2.1.xml --download --out out --update-html index.html
 
       - name: Commit and push if changed
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          # index.html をステージング
-          git add index.html
-          # 変更があればコミットしてプッシュ
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update wordlist from latest JMdict" && git push)
+          # クレジット(NOTICE.txt)と、使ったJMdictの版・語数(build_report.txt)も保存する
+          cp out/NOTICE.txt out/build_report.txt .
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add index.html NOTICE.txt build_report.txt
+          if git diff --staged --quiet; then
+            echo "変更なし"
+          else
+            git commit -m "Auto-update wordlist from latest JMdict" -m "$(head -n 1 build_report.txt)"
+            git push
+          fi
