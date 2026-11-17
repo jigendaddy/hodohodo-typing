@@ -27,6 +27,14 @@
     NOTICE.txt                 クレジットとライセンス(リストを単体で配布するときに同梱)
     build_report.txt           各段階の語数と、使ったJMdictの版
 
+■ 主なオプション
+    --update-html FILE  生成したリストと、クレジット画面のJMdictの版・語数を、HTMLに書き込む
+    --prefer-kanji      同じ読みの語が複数あるとき、漢字を含む語を優先する(省略時は先に出た語)
+    --min-words N       最終的な語数がN未満なら失敗にする(既定 5000)
+    --min-wordnet N     XML入力で見出し語がN未満なら失敗にする(既定 50000。取得失敗の検出用)
+    --max-drop R        HTMLの語数が現在より割合R以上減るなら失敗にする(既定 0.3)
+    失敗にしたときは、HTMLを書き換えず、終了コード1で終わります。
+
 ■ 更新手順(JMdictの更新に追従するための手順)
     1. 本スクリプトを --download 付きで再実行する(JMdictの最新版を取得して作り直す)
     2. build_report.txt に出るJMdictの版・日付を、ゲームのクレジット画面に書き写す
@@ -57,6 +65,7 @@ FREQ_MIN = 3.0                              # wordfreq の zipf 値の下限
 MIN_LEN, MAX_LEN = 2, 10                    # 読みの文字数
 OK_SURFACE = re.compile(r"^[ぁ-んァ-ヶー一-龥々]+$")
 HIRA_ONLY = re.compile(r"^[ぁ-んー]+$")
+HAS_KANJI = re.compile(r"[一-龥々]")
 
 JMDICT_REPO = "https://github.com/scriptin/jmdict-simplified"
 
@@ -76,13 +85,8 @@ Used via jmdict-simplified: {repo}
 JMdict version: {jmdict_version}
 
 [Japanese WordNet]
-Japanese Wordnet (2.1)
-Copyright: 2021-2026 Francis Bond, Takayuki Kuribayashi
-Copyright: 2018-2020 Francis Bond
-Copyright: 2016-2017 Francis Bond, Takayuki Kuribayashi
-Copyright: 2012-2015 Francis Bond
-Copyright: 2009-2011 NICT
-  https://bond-lab.github.io/wnja/eng/index.html
+日本語ワードネット （2.1版）© 2009-2011 NICT, 2012-2015 Francis Bond and 2016-2024 Francis Bond, Takayuki Kuribayashi
+  https://bond-lab.github.io/wnja/index.ja.html
 (下に License 全文)
 
 [wordfreq]
@@ -103,7 +107,7 @@ Copyright: 2009-2011 NICT
 データの正確さ・完全さは保証されません。
 
 ------------------------------------------------------------------
-Japanese WordNet License
+Japanese WordNet License (原文: https://bond-lab.github.io/wnja/license.txt)
 ------------------------------------------------------------------
 Copyright: 2021-2026 Francis Bond, Takayuki Kuribayashi
 Copyright: 2018-2020 Francis Bond
@@ -239,6 +243,42 @@ def build_all_readings(full):
     return allr
 
 
+# ---- HTMLへの反映 ---------------------------------------------------------
+def update_html(path, kept, jm_ver, jm_date, wn_count, max_drop):
+    """HTMLの標準単語リストと、クレジット画面のJMdictの版・語数を書き換える。
+    HTMLの構造が想定と違う場合や、語数が大きく減る場合は、何も書き換えずに失敗にする。"""
+    p = Path(path)
+    raw = p.read_bytes().decode("utf-8")
+    nl = "\r\n" if "\r\n" in raw else "\n"
+    new_n = len(kept)
+
+    m = re.search(r"const DEFAULT_WORDS = (\[[^\]]*\]);?", raw)
+    if not m:
+        sys.exit("HTMLに DEFAULT_WORDS が見つかりません。何も書き込みません。")
+    try:
+        old_n = len(json.loads(m.group(1)))
+    except ValueError:
+        old_n = 0
+    if old_n and new_n < old_n * (1 - max_drop):
+        sys.exit(f"語数が大きく減ります({old_n}語 → {new_n}語)。何も書き込みません。")
+
+    lines = [f"{r},{w}" for w, r in kept]
+    arr = json.dumps(lines, ensure_ascii=False, separators=(",", ":"))
+    arr = arr.replace('","', '",' + nl + '    "')
+    out = raw[:m.start()] + "const DEFAULT_WORDS = " + arr + ";" + raw[m.end():]
+
+    subs = [
+        (r"(jmdict-simplified</a>) [^<（]*（[^）]*版）", rf"\1 {jm_ver}（{jm_date}版）"),
+        (r"見出し語（約[\d,]+語）", f"見出し語（約{round(wn_count, -3):,}語）"),
+        (r"(<li>結果：)[\d,]+(語。</li>)", rf"\g<1>{new_n:,}\g<2>"),
+    ]
+    for pat, rep_ in subs:
+        out, n = re.subn(pat, rep_, out)
+        if n != 1:
+            sys.exit(f"HTMLの更新箇所が見つかりません: {pat}。何も書き込みません。")
+    p.write_bytes(out.encode("utf-8"))
+
+
 # ---- 本体 -----------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser(description="ほどほどタイピング 標準単語リスト作成")
@@ -250,6 +290,12 @@ def main():
     ap.add_argument("--download", action="store_true", help="JMdictの最新版を自動取得")
     ap.add_argument("--cache", default="jmdict_cache", help="--download の保存先")
     ap.add_argument("--out", default="out", help="出力フォルダ")
+    ap.add_argument("--update-html", help="リストと版・語数を書き込むHTML")
+    ap.add_argument("--prefer-kanji", action="store_true",
+                    help="同じ読みの語は、漢字を含む語を優先する")
+    ap.add_argument("--min-words", type=int, default=5000)
+    ap.add_argument("--min-wordnet", type=int, default=50000)
+    ap.add_argument("--max-drop", type=float, default=0.3)
     args = ap.parse_args()
 
     try:
@@ -267,13 +313,17 @@ def main():
     words = (read_wordnet_list(args.wordnet_list) if args.wordnet_list
              else read_wordnet_xml(args.wordnet_xml))
     report = []
+    if args.wordnet_xml and len(set(words)) < args.min_wordnet:
+        sys.exit(f"日本語WordNetの見出し語が少なすぎます({len(set(words))}語)。"
+                 "取得や読み込みに失敗した可能性があります。")
 
     def log(msg):
         print(msg)
         report.append(msg)
 
     common = load_json(common_path)
-    jm_version = f"{common.get('version', '?')} / dictDate {common.get('dictDate', '?')}"
+    jm_ver, jm_date = common.get("version", "?"), common.get("dictDate", "?")
+    jm_version = f"{jm_ver} / dictDate {jm_date}"
     log(f"JMdict(jmdict-simplified): {jm_version}")
     index = build_common_index(common)
     del common
@@ -281,11 +331,12 @@ def main():
     # 1) 重複除去 + 文字種(漢字・かな・長音のみ)
     words = list(dict.fromkeys(w for w in words if w))
     log(f"日本語WordNet 見出し語(重複除去後): {len(words)}")
+    wn_count = len(words)
     words = [w for w in words if OK_SURFACE.match(w)]
     log(f"文字種OK: {len(words)}")
 
-    # 2) JMdictの一般語と一致 + 読みを付ける(読みの長さ制限・同じ読みは先勝ち)
-    rows, seen = [], set()
+    # 2) JMdictの一般語と一致 + 読みを付ける(読みの長さ制限)。同じ読みの語は1つに絞る
+    groups = {}   # 読み -> [(表記, 読みの数), ...] (登場順)
     matched = 0
     for w in words:
         if w not in index:
@@ -295,10 +346,15 @@ def main():
         r = rs[0]
         if not HIRA_ONLY.match(r) or not (MIN_LEN <= len(r) <= MAX_LEN):
             continue
-        if r in seen:
-            continue
-        seen.add(r)
-        rows.append((w, r, len(rs)))
+        groups.setdefault(r, []).append((w, len(rs)))
+    rows = []
+    for r, cands in groups.items():
+        pick = cands[0]                      # 既定: 先に出た語
+        if args.prefer_kanji:
+            kan = [c for c in cands if HAS_KANJI.search(c[0])]
+            if kan:
+                pick = kan[0]                # 漢字を含む語を優先
+        rows.append((pick[0], r, pick[1]))
     log(f"JMdict一般語と一致: {matched}")
     log(f"読みの長さ{MIN_LEN}-{MAX_LEN}文字・読みの重複除去後: {len(rows)}")
 
@@ -319,6 +375,9 @@ def main():
         kept.append((w, r))
     log(f"頻度(zipf>={FREQ_MIN})かつJMdict全体で読みが1つだけ: {len(kept)}  ← 最終")
 
+    if len(kept) < args.min_words:
+        sys.exit(f"最終の語数が少なすぎます({len(kept)}語 < {args.min_words}語)。何も書き込みません。")
+
     # ---- 出力 ----
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -332,6 +391,9 @@ def main():
         NOTICE.format(repo=JMDICT_REPO, jmdict_version=jm_version), encoding="utf-8")
     (out / "build_report.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
     print(f"\n出力: {out.resolve()}")
+    if args.update_html:
+        update_html(args.update_html, kept, jm_ver, jm_date, wn_count, args.max_drop)
+        print(f"HTMLを更新: {args.update_html}({len(kept)}語)")
 
 
 if __name__ == "__main__":
