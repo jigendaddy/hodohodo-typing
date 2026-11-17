@@ -34,8 +34,8 @@ EDRDG（JMdict）のライセンス（第4条）は、データを使うソフ�
 
 ```bash
 pip install "wordfreq[cjk]"
-python build_wordlist.py --wordnet-list words.csv --download```
-
+python build_wordlist.py --wordnet-list words.csv --download
+```
 - `words.csv` は、日本語WordNetの見出し語を1行1語で並べたものです。XMLから直接作る場合は `--wordnet-xml wnja-2.1.xml` を使います。
 - `out/` に単語リスト（CSV, TXT）や `NOTICE.txt` が出力されます。
 
