@@ -6,6 +6,9 @@ on:
     - cron: '0 0 1 * *'
   workflow_dispatch: # 手動実行もできるようにする
 
+permissions:
+  contents: write  # Gitリポジトリへの変更プッシュに必要
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -41,7 +44,8 @@ jobs:
               lines = f.read().strip().split('\n')
           words_json = json.dumps(lines, ensure_ascii=False)
           
-          with open('hodohodo-typing.html', encoding='utf-8') as f:
+          # index.html を対象にするように修正
+          with open('index.html', encoding='utf-8') as f:
               html = f.read()
               
           # HTML内の const DEFAULT_WORDS = [ ... ]; を正規表現で置換
@@ -52,7 +56,7 @@ jobs:
               flags=re.DOTALL
           )
           
-          with open('hodohodo-typing.html', 'w', encoding='utf-8') as f:
+          with open('index.html', 'w', encoding='utf-8') as f:
               f.write(new_html)
           "
 
@@ -60,7 +64,7 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          # 変更されたHTMLだけを追加する（NOTICE.txtはまだないので外す）
-          git add hodohodo-typing.html
+          # index.html をステージング
+          git add index.html
           # 変更があればコミットしてプッシュ
           git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update wordlist from latest JMdict" && git push)
