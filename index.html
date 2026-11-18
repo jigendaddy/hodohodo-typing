@@ -166,6 +166,8 @@
     color: var(--text);
     border-color: var(--amber-dim);
   }
+  .btn-theme:disabled { opacity: .4; cursor: default; }
+  .btn-theme:disabled:hover { color: var(--text-muted); border-color: var(--panel-edge); }
 
   .btn-primary {
     margin-top: 22px;
@@ -552,7 +554,10 @@
     </p>
     <textarea id="wordList" spellcheck="false"></textarea>
     <div class="field-row">
-      <span class="wordcount">単語数：<b id="wordCount">0</b></span>
+      <div class="target-input">
+        <span class="wordcount">単語数：<b id="wordCount">0</b></span>
+        <button id="resetWordsBtn" class="btn-theme" type="button">標準に戻す</button>
+      </div>
       <div class="target-input" style="flex-wrap:wrap;">
         <label for="minLen">最小文字数</label>
         <input type="number" id="minLen" value="1" min="1" max="30" step="1">
@@ -10380,6 +10385,8 @@ Technology and LICENSEE agrees to preserve same.</pre>
     about: document.getElementById('screen-about'),
   };
   const wordListEl = document.getElementById('wordList');
+  const resetWordsBtn = document.getElementById('resetWordsBtn');
+  const DEFAULT_TEXT = DEFAULT_WORDS.join('\n');   // 標準の単語リスト(単語欄が同じ内容か比べる用)
   const wordCountEl = document.getElementById('wordCount');
   const targetCountEl = document.getElementById('targetCount');
   const startBtn = document.getElementById('startBtn');
@@ -10630,6 +10637,7 @@ Technology and LICENSEE agrees to preserve same.</pre>
   }
 
   function refreshWordCount(){
+    resetWordsBtn.disabled = (wordListEl.value === DEFAULT_TEXT);
     const minLen = Math.max(1, parseInt(minLenEl.value, 10) || 1);
     const maxLen = Math.max(minLen, parseInt(maxLenEl.value, 10) || minLen);
     const list = parseWords(minLen, maxLen);
@@ -10656,7 +10664,17 @@ Technology and LICENSEE agrees to preserve same.</pre>
   }
 
   wordListEl.addEventListener('input', () => {
-    try { localStorage.setItem(STORAGE_KEY, wordListEl.value); } catch(e) {}
+    // 標準と同じ内容なら保存しない(保存すると、標準リストが更新されても古いリストのままになるため)
+    try {
+      if (wordListEl.value === DEFAULT_TEXT) localStorage.removeItem(STORAGE_KEY);
+      else localStorage.setItem(STORAGE_KEY, wordListEl.value);
+    } catch(e) {}
+    refreshWordCount();
+  });
+  resetWordsBtn.addEventListener('click', () => {
+    if (!confirm('編集した単語リストを破棄して、標準の単語リストに戻します。よろしいですか？')) return;
+    wordListEl.value = DEFAULT_TEXT;
+    try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
     refreshWordCount();
   });
   minLenEl.addEventListener('input', refreshWordCount);
