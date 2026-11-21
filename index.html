@@ -18,6 +18,12 @@
     --text-muted: #66716b;
     --miss: #c8503f;
     --miss-glow: rgba(200, 80, 63, 0.28);
+    --fast-label: #ec8c08;
+    --fast-bg: #f9f1dd;
+    --fast-edge: #f4d8b4;
+    --slow-label: #1c80e0;
+    --slow-bg: #e7f2f3;
+    --slow-edge: #c5deed;
     --dial-center-1: #ffffff;
     --dial-center-2: #ebe7db;
     --typed-fg: #ffffff;
@@ -39,6 +45,12 @@
     --text-muted: #9aa39d;
     --miss: #e0705c;
     --miss-glow: rgba(224, 112, 92, 0.35);
+    --fast-label: #e0705c;
+    --slow-label: #6fb1ff;
+    --fast-bg: rgba(224, 112, 92, 0.2);
+    --fast-edge: rgba(224, 112, 92, 0.55);
+    --slow-bg: rgba(111, 177, 255, 0.18);
+    --slow-edge: rgba(111, 177, 255, 0.5);
     --dial-center-1: #2a2f2b;
     --dial-center-2: #1f2320;
     --typed-fg: #10201a;
@@ -474,28 +486,58 @@
   }
   .out-words-list {
     display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .out-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .out-group-label {
+    flex: 0 0 4.6em;
+    padding-top: 7px;
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .out-group.fast .out-group-label { color: var(--fast-label); }
+  .out-group.slow .out-group-label { color: var(--slow-label); }
+  .out-group-items {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
     flex-wrap: wrap;
-    gap: 6px 10px;
-    font-size: 13.5px;
-    line-height: 1.6;
+    gap: 8px;
   }
   .out-word-item {
-    display: inline-flex;
+    display: flex;
+    justify-content: space-between;
     align-items: baseline;
-    gap: 6px;
-    padding: 3px 8px;
-    background: var(--bg);
-    border: 1px solid var(--panel-edge);
-    border-radius: 6px;
+    gap: 10px;
+    padding: 6px 14px;
+    border: 1px solid;
+    border-radius: 10px;
+    white-space: nowrap;
     font-variant-numeric: tabular-nums;
+  }
+  .out-group.fast .out-word-item {
+    background: var(--fast-bg);
+    border-color: var(--fast-edge);
+  }
+  .out-group.slow .out-word-item {
+    background: var(--slow-bg);
+    border-color: var(--slow-edge);
   }
   .out-word-item .w {
     color: var(--text);
     font-weight: 600;
   }
   .out-word-item .s {
-    color: var(--miss);
-    font-size: 12px;
+    font-size: 14px;
+    color: var(--text);
   }
 
   @media (max-width: 480px) {
@@ -10792,7 +10834,7 @@ Technology and LICENSEE agrees to preserve same.</pre>
       outCount++;
       outWordTotal++;
       outWordCountEl.textContent = outWordTotal;
-      outWordLog.push({ display: w.display, speed: speed });
+      outWordLog.push({ display: w.display, speed: speed, type: speed < zoneLow ? 'slow' : 'fast' });
       if (outCount >= PENALTY_TRIGGER){
         requiredKeys += PENALTY_KEYS;
         penaltyCount++;
@@ -11083,10 +11125,21 @@ Technology and LICENSEE agrees to preserve same.</pre>
     const outWordsList = document.getElementById('outWordsList');
     if (outWordLog.length){
       outWordsBlock.style.display = 'block';
-      outWordsList.innerHTML = outWordLog.map(e =>
-        '<span class="out-word-item"><span class="w">' + escapeHtml(e.display) +
-        '</span><span class="s">' + e.speed.toFixed(1) + ' 打/秒</span></span>'
-      ).join('');
+      const groups = [
+        { type: 'fast', label: '▲ 速い' },
+        { type: 'slow', label: '▼ 遅い' }
+      ];
+      outWordsList.innerHTML = groups.map(g => {
+        const items = outWordLog.filter(e => e.type === g.type);
+        if (!items.length) return '';
+        return '<div class="out-group ' + g.type + '"><span class="out-group-label">' + g.label +
+          '</span><span class="out-group-items">' +
+          items.map(e =>
+            '<span class="out-word-item"><span class="w">' + escapeHtml(e.display) +
+            '</span><span class="s">' + e.speed.toFixed(1) + '</span></span>'
+          ).join('') +
+          '</span></div>';
+      }).join('');
     } else {
       outWordsBlock.style.display = 'none';
       outWordsList.innerHTML = '';
