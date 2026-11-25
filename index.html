@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ほどほどタイピング</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root{
     color-scheme: light;
@@ -29,6 +32,7 @@
     --typed-fg: #ffffff;
     --radius: 10px;
     --mono: 'Consolas', 'JetBrains Mono', 'Menlo', 'Courier New', monospace;
+    --soft: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo UI', system-ui, sans-serif;
   }
 
   /* ---- ダークモード ---- */
@@ -485,6 +489,7 @@
     transition: background .2s ease;
   }
   .out-words-list {
+    font-family: var(--soft);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -537,6 +542,7 @@
   }
   /* ペナルティが発生した単語を囲む赤枠 */
   .penalty-group {
+    position: relative;
     display: inline-flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -545,7 +551,35 @@
     border: 2px solid var(--miss);
     border-radius: 16px;
   }
+  /* ペナルティが2回以上のとき、枠の左上に付ける発生順の番号 */
+  .penalty-badge {
+    position: absolute;
+    top: -11px;
+    left: -7px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 10px;
+    background: var(--panel);
+    border: 2px solid var(--miss);
+    color: var(--miss);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+  /* ダークモードは赤地に濃色の数字 */
+  :root[data-theme="dark"] .penalty-badge {
+    background: var(--miss);
+    border: none;
+    color: var(--typed-fg);
+    line-height: 20px;
+  }
+  .out-words-list.numbered { gap: 20px; }
   .out-word-item .s {
+    font-family: var(--mono);
     font-size: 14px;
     color: var(--text);
   }
@@ -11120,6 +11154,10 @@ Technology and LICENSEE agrees to preserve same.</pre>
   function renderOutWords(log){
     const outWordsBlock = document.getElementById('outWordsBlock');
     const outWordsList = document.getElementById('outWordsList');
+    // ペナルティが2回以上のときだけ、赤枠に発生順の番号を付ける
+    const penaltyTotal = new Set(log.filter(e => e.penaltyId !== undefined).map(e => e.penaltyId)).size;
+    const numbered = penaltyTotal >= 2;
+    outWordsList.classList.toggle('numbered', numbered);
     if (log.length){
       outWordsBlock.style.display = 'block';
       const groups = [
@@ -11149,7 +11187,9 @@ Technology and LICENSEE agrees to preserve same.</pre>
                   inner += chip(items[j]);
                   j++;
                 }
-                html += '<span class="penalty-group">' + inner + '</span>';
+                html += '<span class="penalty-group">' +
+                  (numbered ? '<span class="penalty-badge">' + id + '</span>' : '') +
+                  inner + '</span>';
                 i = j;
               }
             }
@@ -11202,13 +11242,14 @@ Technology and LICENSEE agrees to preserve same.</pre>
   if (DEV_MODE){
     // [表記, 速度, 種別, penaltyId(省略可)]
     const DEV_PATTERNS = [
-      { name: '速い側のみ(画像と同じ)', log: [
+      { name: '速い側のみ・1回(画像と同じ)', log: [
         ['呼吸', 5.6, 'fast'], ['比較的', 5.4, 'fast', 1], ['確認', 5.3, 'fast', 1], ['状況', 5.2, 'fast', 1],
         ['必要', 5.5, 'fast'], ['尾根', 3.4, 'slow'], ['ブイ', 3.8, 'slow'], ['有用', 4.0, 'slow'], ['アウト', 4.1, 'slow'] ] },
-      { name: '速い側と遅い側に分かれる', log: [
+      { name: '速い側と遅い側に分かれる(2回)', log: [
         ['呼吸', 5.6, 'fast'], ['比較的', 5.7, 'fast', 1], ['尾根', 3.4, 'slow', 1], ['確認', 5.9, 'fast', 1],
-        ['状況', 3.6, 'slow'], ['必要', 5.5, 'fast'] ] },
-      { name: 'ペナルティ複数回', log: [
+        ['状況', 3.6, 'slow'], ['必要', 5.5, 'fast'],
+        ['環境', 5.8, 'fast', 2], ['利用', 3.3, 'slow', 2], ['情報', 5.9, 'fast', 2] ] },
+      { name: 'ペナルティ3回', log: [
         ['比較的', 5.4, 'fast', 1], ['確認', 5.3, 'fast', 1], ['状況', 5.2, 'fast', 1],
         ['尾根', 3.4, 'slow', 2], ['ブイ', 3.5, 'slow', 2], ['有用', 3.3, 'slow', 2],
         ['必要', 5.6, 'fast', 3], ['呼吸', 3.2, 'slow', 3], ['環境', 5.8, 'fast', 3] ] },
