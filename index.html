@@ -535,6 +535,16 @@
     color: var(--text);
     font-weight: 600;
   }
+  /* ペナルティが発生した単語を囲む赤枠 */
+  .penalty-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 4px;
+    margin: -4px;
+    border: 2px solid var(--miss);
+    border-radius: 16px;
+  }
   .out-word-item .s {
     font-size: 14px;
     color: var(--text);
@@ -585,6 +595,7 @@
   <section id="screen-setup" class="screen active">
     <div class="theme-row">
       <button id="themeBtn" class="btn-theme" type="button" aria-label="テーマ切り替え">🌙 ダーク</button>
+      <button id="devBtn" class="btn-theme" type="button" hidden>🛠 リザルト表示テスト</button>
       <button id="aboutBtn" class="btn-theme" type="button">クレジット</button>
     </div>
     <h1>ほどほどタイピング<span style="font-size:.5em;color:var(--text-muted);font-weight:400;"> 〜速すぎず、遅すぎず〜</span></h1>
@@ -694,6 +705,8 @@
     </div>
     <div class="theme-row" style="margin-top:14px;">
       <button id="themeBtn2" class="btn-theme" type="button" aria-label="テーマ切り替え">🌙 ダーク</button>
+      <button id="devBtn2" class="btn-theme" type="button" hidden>🛠 次のサンプル</button>
+      <span id="devLabel2" class="preview" style="margin:0;align-self:center;" hidden></span>
       <button id="aboutBtn2" class="btn-theme" type="button">クレジット</button>
     </div>
   </section>
@@ -10838,6 +10851,8 @@ Technology and LICENSEE agrees to preserve same.</pre>
       if (outCount >= PENALTY_TRIGGER){
         requiredKeys += PENALTY_KEYS;
         penaltyCount++;
+        // 直近のゾーン外 PENALTY_TRIGGER 語(連続していた単語)にペナルティ印を付ける
+        outWordLog.slice(-PENALTY_TRIGGER).forEach(e => { e.penaltyId = penaltyCount; });
         outCount = 0;
         updateProgress();
       }
@@ -11102,6 +11117,52 @@ Technology and LICENSEE agrees to preserve same.</pre>
     statAvg.textContent = avg.toFixed(1) + ' 打/秒';
   }
 
+  function renderOutWords(log){
+    const outWordsBlock = document.getElementById('outWordsBlock');
+    const outWordsList = document.getElementById('outWordsList');
+    if (log.length){
+      outWordsBlock.style.display = 'block';
+      const groups = [
+        { type: 'fast', label: '▲ 速い' },
+        { type: 'slow', label: '▼ 遅い' }
+      ];
+      outWordsList.innerHTML = groups.map(g => {
+        const items = log.filter(e => e.type === g.type);
+        if (!items.length) return '';
+        return '<div class="out-group ' + g.type + '"><span class="out-group-label">' + g.label +
+          '</span><span class="out-group-items">' +
+          (function(){
+            const chip = e =>
+              '<span class="out-word-item"><span class="w">' + escapeHtml(e.display) +
+              '</span><span class="s">' + e.speed.toFixed(1) + '</span></span>';
+            let html = '';
+            let i = 0;
+            while (i < items.length){
+              const id = items[i].penaltyId;
+              if (id === undefined){
+                html += chip(items[i]);
+                i++;
+              } else {
+                // 同じペナルティ(同じ penaltyId)で連続している単語を1つの赤枠にまとめる
+                let j = i, inner = '';
+                while (j < items.length && items[j].penaltyId === id){
+                  inner += chip(items[j]);
+                  j++;
+                }
+                html += '<span class="penalty-group">' + inner + '</span>';
+                i = j;
+              }
+            }
+            return html;
+          })() +
+          '</span></div>';
+      }).join('');
+    } else {
+      outWordsBlock.style.display = 'none';
+      outWordsList.innerHTML = '';
+    }
+  }
+
   function finishSuccess(){
     stopLoop();
     attemptHistory.push(Math.min(creditCount, requiredKeys));
@@ -11121,29 +11182,7 @@ Technology and LICENSEE agrees to preserve same.</pre>
 	document.getElementById('resMiss').textContent = lifetimeMiss + ' 回';
 	document.getElementById('resTotalTime').textContent = cumulativeTime.toFixed(2) + ' 秒';
 
-    const outWordsBlock = document.getElementById('outWordsBlock');
-    const outWordsList = document.getElementById('outWordsList');
-    if (outWordLog.length){
-      outWordsBlock.style.display = 'block';
-      const groups = [
-        { type: 'fast', label: '▲ 速い' },
-        { type: 'slow', label: '▼ 遅い' }
-      ];
-      outWordsList.innerHTML = groups.map(g => {
-        const items = outWordLog.filter(e => e.type === g.type);
-        if (!items.length) return '';
-        return '<div class="out-group ' + g.type + '"><span class="out-group-label">' + g.label +
-          '</span><span class="out-group-items">' +
-          items.map(e =>
-            '<span class="out-word-item"><span class="w">' + escapeHtml(e.display) +
-            '</span><span class="s">' + e.speed.toFixed(1) + '</span></span>'
-          ).join('') +
-          '</span></div>';
-      }).join('');
-    } else {
-      outWordsBlock.style.display = 'none';
-      outWordsList.innerHTML = '';
-    }
+    renderOutWords(outWordLog);
 
     const chainHtml = attemptHistory.map((count, i) => {
       const isLast = i === attemptHistory.length - 1;
@@ -11155,6 +11194,57 @@ Technology and LICENSEE agrees to preserve same.</pre>
     document.getElementById('historyChain').innerHTML = chainHtml;
 
     show('result');
+  }
+
+
+  // ---- 開発用: リザルト画面の表示テスト(URL に ?dev を付けたときだけボタンが出る) ----
+  const DEV_MODE = /[?&]dev(=|&|$)/.test(location.search);
+  if (DEV_MODE){
+    // [表記, 速度, 種別, penaltyId(省略可)]
+    const DEV_PATTERNS = [
+      { name: '速い側のみ(画像と同じ)', log: [
+        ['呼吸', 5.6, 'fast'], ['比較的', 5.4, 'fast', 1], ['確認', 5.3, 'fast', 1], ['状況', 5.2, 'fast', 1],
+        ['必要', 5.5, 'fast'], ['尾根', 3.4, 'slow'], ['ブイ', 3.8, 'slow'], ['有用', 4.0, 'slow'], ['アウト', 4.1, 'slow'] ] },
+      { name: '速い側と遅い側に分かれる', log: [
+        ['呼吸', 5.6, 'fast'], ['比較的', 5.7, 'fast', 1], ['尾根', 3.4, 'slow', 1], ['確認', 5.9, 'fast', 1],
+        ['状況', 3.6, 'slow'], ['必要', 5.5, 'fast'] ] },
+      { name: 'ペナルティ複数回', log: [
+        ['比較的', 5.4, 'fast', 1], ['確認', 5.3, 'fast', 1], ['状況', 5.2, 'fast', 1],
+        ['尾根', 3.4, 'slow', 2], ['ブイ', 3.5, 'slow', 2], ['有用', 3.3, 'slow', 2],
+        ['必要', 5.6, 'fast', 3], ['呼吸', 3.2, 'slow', 3], ['環境', 5.8, 'fast', 3] ] },
+      { name: 'ペナルティなし', log: [
+        ['呼吸', 5.6, 'fast'], ['尾根', 3.4, 'slow'], ['確認', 5.3, 'fast'] ] },
+    ];
+    let devIdx = -1;
+
+    function devShowResult(){
+      devIdx = (devIdx + 1) % DEV_PATTERNS.length;
+      const pat = DEV_PATTERNS[devIdx];
+      const log = pat.log.map(a => ({ display: a[0], speed: a[1], type: a[2], penaltyId: a[3] }));
+      const penalties = new Set(log.filter(e => e.penaltyId !== undefined).map(e => e.penaltyId)).size;
+
+      document.getElementById('resRank').textContent = 'B';
+      document.getElementById('resAvg').textContent = '4.9 打/秒';
+      document.getElementById('resTime').textContent = '166.08 秒';
+      document.getElementById('resIdeal').textContent = '125.9 秒';
+      document.getElementById('resPenalty').textContent = penalties + ' 回（+' + (penalties * PENALTY_KEYS) + ' 打）';
+      document.getElementById('resMiss').textContent = '5 回';
+      document.getElementById('resTarget').textContent = (768 + penalties * PENALTY_KEYS) + ' 打';
+      document.getElementById('resTotalTime').textContent = '450.49 秒';
+      document.getElementById('historyChain').innerHTML =
+        '<span class="fail">364</span><span class="arrow"> → </span><span class="fail">12</span>' +
+        '<span class="arrow"> → </span><span class="clear">816 ✓</span>';
+      renderOutWords(log);
+      show('result');
+      document.getElementById('devLabel2').textContent = '(' + (devIdx + 1) + '/' + DEV_PATTERNS.length + ') ' + pat.name;
+    }
+
+    ['devBtn', 'devBtn2'].forEach(id => {
+      const el = document.getElementById(id);
+      el.hidden = false;
+      el.addEventListener('click', devShowResult);
+    });
+    document.getElementById('devLabel2').hidden = false;
   }
 
   document.addEventListener('keydown', (e) => {
